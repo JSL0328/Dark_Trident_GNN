@@ -1,0 +1,9 @@
+executable = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/make_graphs.sh
+output = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/logs/make_graphs.$(CLUSTER).out
+error  = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/logs/make_graphs.$(CLUSTER).err
+log    = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/logs/make_graphs.$(CLUSTER).log
+request_cpus = 4
+request_memory = 16GB
++MaxRuntime = 86400
+queue
+
