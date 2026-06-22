@@ -1,5 +1,5 @@
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg') # saves only, no display
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.model_selection import train_test_split
