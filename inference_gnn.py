@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
-from torch_geometric.nn import conv, global_mean_pool
+from torch_geometric.nn import conv, global_mean_pool, global_max_pool
 from torch_geometric.nn.norm import BatchNorm
 from torch_geometric.loader import DataLoader
 from sklearn import metrics
@@ -21,7 +21,7 @@ os.makedirs(output_dir, exist_ok=True)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
 
-# GNN model (must match train_gnn.py)
+# Model (must match train_gnn.py)
 class GNNClassifier(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
         super(GNNClassifier, self).__init__()
@@ -31,7 +31,7 @@ class GNNClassifier(nn.Module):
             conv_layers.append((conv.GraphConv(input_dim, hidden_dim), BatchNorm(hidden_dim), nn.ReLU()))
             input_dim = hidden_dim
         self.conv_layers = nn.ModuleList([nn.ModuleList(layer) for layer in conv_layers])
-        self.output_layer = nn.Linear(input_dim, output_dim)
+        self.output_layer = nn.Linear(input_dim * 2, output_dim)
 
     def forward(self, data, edges, batch_indices, skip_output_activation=False):
         x = self.init_batch_norm(data)
@@ -39,7 +39,7 @@ class GNNClassifier(nn.Module):
             x = gnn_conv(x, edges)
             x = batch_norm(x)
             x = activation(x)
-        x = global_mean_pool(x, batch_indices)
+        x = torch.cat([global_mean_pool(x, batch_indices), global_max_pool(x, batch_indices)], dim=1)
         x = self.output_layer(x)
         if not skip_output_activation:
             x = torch.sigmoid(x)
@@ -49,21 +49,26 @@ class GNNClassifier(nn.Module):
 input_dim   = 3
 hidden_dims = [8, 16, 32]
 model = GNNClassifier(input_dim=input_dim, hidden_dims=hidden_dims, output_dim=1).to(device)
-model.load_state_dict(torch.load(weights_dir + 'gnn_model_best.pt', map_location=device))
+model.load_state_dict(torch.load(weights_dir + 'gnn_model_best.pt', map_location=device, weights_only=False))
 model.eval()
 print("Model loaded.")
 
-# Load test graphs
+# Load test graphs from split files
 print("Loading test graphs...")
-test_sample = torch.load(graphs_dir + 'test_graphs.pt')
-test_sample = [data.to(device) for data in test_sample]
-test_loader = DataLoader(test_sample, batch_size=32, shuffle=False)
+test_sample = []
+test_files = sorted([f for f in os.listdir(graphs_dir) if f.startswith("test_graphs_") and f.endswith('.pt')])
+for f in test_files:
+    chunk = torch.load(os.path.join(graphs_dir, f), weights_only=False)
+    test_sample.extend(chunk)
 print(f"Test graphs: {len(test_sample)}")
+
+test_loader = DataLoader(test_sample, batch_size=32, shuffle=False)
 
 # Run inference
 test_scores = []
 test_flags  = []
 for batch in test_loader:
+    batch = batch.to(device)
     with torch.no_grad():
         outputs = model(batch.x, batch.edge_index, batch.batch, skip_output_activation=True)
         scores  = torch.sigmoid(outputs).squeeze()
@@ -77,7 +82,7 @@ test_flags  = np.array(test_flags)
 test_acc = ((test_scores > 0.5) == test_flags).mean()
 print(f"Test Accuracy: {test_acc:.4f}")
 
-# ROC curve and AUC
+# ROC and AUC
 fpr, tpr, _ = metrics.roc_curve(test_flags, test_scores)
 auc_score   = metrics.auc(fpr, tpr)
 print(f"AUC: {auc_score:.4f}")

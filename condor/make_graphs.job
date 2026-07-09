@@ -1,6 +1,7 @@
 executable = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/make_graphs.sh
-error = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/make_graphs.$(CLUSTER).err
-log   = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/make_graphs.$(CLUSTER).log
+error  = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/make_graphs.$(CLUSTER).err
+log    = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/make_graphs.$(CLUSTER).log
+request_gpus = 1
 +MaxRuntime = 86400
 notification = Always
 queue

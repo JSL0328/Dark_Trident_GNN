@@ -4,62 +4,73 @@ import torch
 from torch_geometric.data import Data
 import h5py
 import os
+from multiprocessing import Pool, cpu_count
 
-# Paths
+# Paths and Configuration
 training_file = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/hdf5/output_hdf5/MPID_training_set_full.h5"
 test_file     = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/hdf5/output_hdf5/MPID_test_set_full.h5"
 output_dir    = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs/"
 N_NEIGHBORS   = 8
+BATCH_SIZE    = 5000
 
 os.makedirs(output_dir, exist_ok=True)
 
-# Load spacepoints and labels from HDF5
-def load_hdf5_data(hdf5_file):
-    data_list = []
+# Graph Generation Function
+def process_single_event(args):
+    sp, label, n_neighbors = args
+    if len(sp) > n_neighbors + 1:
+        A_matrix = kneighbors_graph(sp, n_neighbors=n_neighbors, mode='connectivity', include_self=False).toarray()
+    elif len(sp) > 1:
+        A_matrix = kneighbors_graph(sp, n_neighbors=min(n_neighbors, len(sp)-1), mode='connectivity', include_self=False).toarray()
+    elif len(sp) == 1:
+        A_matrix = np.array([[1]])
+    else:
+        return None
+
+    edges = np.array(np.nonzero(A_matrix))
+    x = torch.tensor(sp, dtype=torch.float)
+    edge_index = torch.tensor(edges, dtype=torch.long)
+    y = torch.tensor([label], dtype=torch.float)
+    return Data(x=x, edge_index=edge_index, y=y)
+
+# Batch Processing and Saving
+def process_and_save_hdf5(hdf5_file, prefix):
+    print(f"Processing {hdf5_file}...")
+    
     with h5py.File(hdf5_file, 'r') as f:
-        for event_id in f.keys():
-            spacepoints = f[event_id]['spacepoints'][:]  # read full array into memory
-            label = f[event_id].attrs['label']
-            data_list.append({'spacepoints': spacepoints, 'label': label})
-    return data_list
+        event_ids = list(f.keys())
+        total_events = len(event_ids)
+        
+        buffer = []
+        batch_counter = 0
+        num_workers = max(1, cpu_count() - 2)
+        pool = Pool(processes=num_workers)
+        
+        for i in range(0, total_events, BATCH_SIZE):
+            chunk_ids = event_ids[i:i+BATCH_SIZE]
+            tasks = []
+            
+            for eid in chunk_ids:
+                sp = f[eid]['spacepoints'][:]
+                label = f[eid].attrs['label']
+                tasks.append((sp, label, N_NEIGHBORS))
+            
+            results = pool.map(process_single_event, tasks)
+            valid_graphs = [g for g in results if g is not None]
+            buffer.extend(valid_graphs)
+            
+            print(f"[{prefix}] Processed {min(i+BATCH_SIZE, total_events)}/{total_events}")
+            
+            chunk_output_path = os.path.join(output_dir, f"{prefix}_graphs_{batch_counter}.pt")
+            torch.save(buffer, chunk_output_path)
+            batch_counter += 1
+            buffer = []
+            
+        pool.close()
+        pool.join()
 
-# Convert spacepoints to PyG graph objects using KNN
-def make_graphs(data_list, n_neighbors=N_NEIGHBORS):
-    graph_list = []
-    N_skipped = 0
-    for i, event in enumerate(data_list):
-        sp    = event['spacepoints']
-        label = event['label']
-        if len(sp) > n_neighbors + 1:
-            A_matrix = kneighbors_graph(sp, n_neighbors=n_neighbors, mode='connectivity', include_self=False).toarray()
-        elif len(sp) > 1:
-            A_matrix = kneighbors_graph(sp, n_neighbors=min(n_neighbors, len(sp)-1), mode='connectivity', include_self=False).toarray()
-        elif len(sp) == 1:
-            A_matrix = np.array([[1]])
-        else:
-            N_skipped += 1
-            continue
-        edges      = np.array(np.nonzero(A_matrix))
-        x          = torch.tensor(sp, dtype=torch.float)
-        edge_index = torch.tensor(edges, dtype=torch.long)
-        y          = torch.tensor([label], dtype=torch.float)
-        graph_list.append(Data(x=x, edge_index=edge_index, y=y))
-        if i % 1000 == 0:
-            print(f"Processed {i}/{len(data_list)}")
-    print(f"Skipped {N_skipped} events with no spacepoints")
-    return graph_list
-
-# Main
-print("Loading data...")
-train_data = load_hdf5_data(training_file)
-test_data  = load_hdf5_data(test_file)
-print(f"Training: {len(train_data)} events, Test: {len(test_data)} events")
-
-print("Converting to graphs...")
-train_graphs = make_graphs(train_data)
-test_graphs  = make_graphs(test_data)
-
-print("Saving...")
-torch.save(train_graphs, output_dir + 'train_graphs.pt')
-torch.save(test_graphs,  output_dir + 'test_graphs.pt')
-print(f"Done. Saved to {output_dir}")
+# Main Execution
+if __name__ == '__main__':
+    process_and_save_hdf5(training_file, "train")
+    process_and_save_hdf5(test_file, "test")
+    print("Graph generation completed.")

@@ -3,6 +3,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import random
+import time
 from sklearn.model_selection import train_test_split
 import torch
 import torch.nn as nn
@@ -12,12 +13,10 @@ from torch_geometric.nn.norm import BatchNorm
 from torch_geometric.loader import DataLoader
 import os
 
-import time
-
 # Paths
-graphs_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs/"
-weights_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/weights/"
-output_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/output/"
+graphs_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs_edge/"
+weights_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/weights_transformer/"
+output_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/output_transformer/"
 
 os.makedirs(weights_dir, exist_ok=True)
 os.makedirs(output_dir, exist_ok=True)
@@ -50,22 +49,30 @@ random.shuffle(all_graphs)
 train_sample, val_sample = train_test_split(all_graphs, test_size=0.15, random_state=42)
 print(f"Train: {len(train_sample)}, Val: {len(val_sample)}, Test: {len(test_sample)}")
 
-# Model
-class GNNClassifier(nn.Module):
-    def __init__(self, input_dim, hidden_dims, output_dim):
-        super(GNNClassifier, self).__init__()
+# TransformerConv model with edge features
+class GNNTransformer(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim, edge_dim, heads=4):
+        super(GNNTransformer, self).__init__()
         self.init_batch_norm = BatchNorm(input_dim)
         conv_layers = []
         for hidden_dim in hidden_dims:
-            conv_layers.append((conv.GraphConv(input_dim, hidden_dim), BatchNorm(hidden_dim), nn.ReLU()))
-            input_dim = hidden_dim
+            # TransformerConv output dim = hidden_dim * heads when concat=True
+            transformer_conv = conv.TransformerConv(input_dim, hidden_dim, heads=heads, edge_dim=edge_dim, concat=True)
+            batch_norm = BatchNorm(hidden_dim * heads)
+            activation = nn.ReLU()
+            conv_layers.append((transformer_conv, batch_norm, activation))
+            input_dim = hidden_dim * heads  # next layer input
+            edge_dim  = None                # edge_dim only for first layer
         self.conv_layers = nn.ModuleList([nn.ModuleList(layer) for layer in conv_layers])
-        self.output_layer = nn.Linear(input_dim * 2, output_dim)
+        self.output_layer = nn.Linear(input_dim * 2, output_dim)  # *2 for mean+max
 
-    def forward(self, data, edges, batch_indices, skip_output_activation=False):
+    def forward(self, data, edges, batch_indices, edge_attr=None, skip_output_activation=False):
         x = self.init_batch_norm(data)
-        for gnn_conv, batch_norm, activation in self.conv_layers:
-            x = gnn_conv(x, edges)
+        for i, (transformer_conv, batch_norm, activation) in enumerate(self.conv_layers):
+            if i == 0:
+                x = transformer_conv(x, edges, edge_attr=edge_attr)
+            else:
+                x = transformer_conv(x, edges)
             x = batch_norm(x)
             x = activation(x)
         x = torch.cat([global_mean_pool(x, batch_indices), global_max_pool(x, batch_indices)], dim=1)
@@ -75,30 +82,31 @@ class GNNClassifier(nn.Module):
         return x
 
 # Hyperparameters
-input_dim     = 3
-hidden_dims   = [32, 64, 128, 256] # best one figured out from hyperparameter tuning
+input_dim     = 3    # wire, time, ADC
+edge_dim      = 3    # wire distance, time distance, ADC difference
+hidden_dims   = [32, 64, 128, 256]
+heads         = 4
 batch_size    = 32
 n_epochs      = 100
 learning_rate = 1e-3
 patience      = 10
 
-model     = GNNClassifier(input_dim=input_dim, hidden_dims=hidden_dims, output_dim=1).to(device)
+model     = GNNTransformer(input_dim=input_dim, hidden_dims=hidden_dims, output_dim=1, edge_dim=edge_dim, heads=heads).to(device)
 optimizer = torch.optim.RAdam(model.parameters(), lr=learning_rate)
 criterion = nn.BCEWithLogitsLoss()
 
 # Print model structure
-print(torchinfo.summary(model, input_data=(
-    torch.randn((10, input_dim)).to(device),
-    torch.tensor([[0,1,2,3,4,5,6,7,8,9],[1,0,3,2,5,4,7,6,9,8]], dtype=torch.long).to(device),
-    torch.zeros(10, dtype=torch.long).to(device)
-)))
+dummy_x         = torch.randn((10, input_dim)).to(device)
+dummy_edge_index= torch.tensor([[0,1,2,3,4,5,6,7,8,9],[1,0,3,2,5,4,7,6,9,8]], dtype=torch.long).to(device)
+dummy_edge_attr = torch.randn((10, edge_dim)).to(device)
+dummy_batch     = torch.zeros(10, dtype=torch.long).to(device)
+print(torchinfo.summary(model, input_data=(dummy_x, dummy_edge_index, dummy_batch, dummy_edge_attr)))
 
 # Training loop with early stopping
 train_losses, val_losses         = [], []
 train_accuracies, val_accuracies = [], []
 best_val_loss                    = float('inf')
 epochs_no_improve                = 0
-best_model_state                 = None
 stopped_epoch                    = n_epochs
 training_start                   = time.time()
 
@@ -112,7 +120,7 @@ for epoch in range(n_epochs):
     for batch in train_loader:
         batch = batch.to(device)
         optimizer.zero_grad()
-        outputs = model(batch.x, batch.edge_index, batch.batch, skip_output_activation=True)
+        outputs = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr, skip_output_activation=True)
         scores  = torch.sigmoid(outputs).squeeze()
         loss    = criterion(outputs.squeeze(-1), batch.y.float())
         loss.backward()
@@ -134,7 +142,7 @@ for epoch in range(n_epochs):
     for batch in val_loader:
         batch = batch.to(device)
         with torch.no_grad():
-            outputs = model(batch.x, batch.edge_index, batch.batch, skip_output_activation=True)
+            outputs = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr, skip_output_activation=True)
             scores  = torch.sigmoid(outputs).squeeze()
             loss    = criterion(outputs.squeeze(-1), batch.y.float())
             epoch_val_loss      += loss.mean().item()
@@ -151,10 +159,9 @@ for epoch in range(n_epochs):
 
     # Early stopping
     if epoch_val_loss < best_val_loss:
-        best_val_loss    = epoch_val_loss
+        best_val_loss     = epoch_val_loss
         epochs_no_improve = 0
-        best_model_state = model.state_dict()
-        torch.save(best_model_state, weights_dir + 'gnn_model_best.pt')
+        torch.save(model.state_dict(), weights_dir + 'transformer_model_best.pt')
     else:
         epochs_no_improve += 1
         if epochs_no_improve >= patience:
@@ -164,7 +171,7 @@ for epoch in range(n_epochs):
 
 total_time = time.time() - training_start
 print(f"Total training time: {total_time/60:.1f} minutes")
-torch.save(model.state_dict(), weights_dir + 'gnn_model_last.pt')
+torch.save(model.state_dict(), weights_dir + 'transformer_model_last.pt')
 print(f"Weights saved to {weights_dir}")
 
 # Save metrics
@@ -182,7 +189,7 @@ plt.plot(x_epochs, train_losses, label='Train Loss', marker='o', markersize=3)
 plt.plot(x_epochs, val_losses,   label='Val Loss',   marker='o', markersize=3)
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
-plt.title('Training and Validation Loss')
+plt.title('Training and Validation Loss (TransformerConv)')
 plt.xticks(range(0, epochs_ran + 1, 10))
 plt.legend()
 plt.tight_layout()
@@ -195,7 +202,7 @@ plt.plot(x_epochs, train_accuracies, label='Train Accuracy', marker='o', markers
 plt.plot(x_epochs, val_accuracies,   label='Val Accuracy',   marker='o', markersize=3)
 plt.xlabel('Epoch')
 plt.ylabel('Accuracy')
-plt.title('Training and Validation Accuracy')
+plt.title('Training and Validation Accuracy (TransformerConv)')
 plt.xticks(range(0, epochs_ran + 1, 10))
 plt.legend()
 plt.tight_layout()

@@ -1,1 +1,8 @@
 *.h5
+graphs/
+graphs_edge/
+weights/
+weights_transformer/
+output/
+output_transformer/
+condor/logs/
