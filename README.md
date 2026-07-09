@@ -23,6 +23,15 @@ Each event is represented as a graph where nodes are hit pixels extracted from t
 - Hidden dims: [32, 64, 128, 256]
 - Early stopping (patience=10)
 
+## Data
+
+| Dataset | Type | Purpose |
+|---------|------|---------|
+| MPID training set (62k events) | Simulation | Model training |
+| MPID test set (6.9k events) | Simulation | Performance evaluation (AUC, ROC) |
+| run1 signal simulation | Simulation | Signal efficiency measurement |
+| run3 NuMI beam-on data | Real data | Data/MC comparison |
+
 ## Pipeline
 
 1. `convert_to_hdf5.py` — Convert LArCV ROOT files to HDF5 spacepoint format
