@@ -43,11 +43,11 @@ Each event is represented as a graph where nodes are hit pixels extracted from t
 
 ## Results
 
-| Model | AUC |
-|-------|-----|
-| CNN baseline (Lepin 2024) | 0.9512 |
-| GraphConv GNN | 0.9454 |
-| TransformerConv GNN | TBD |
+| Model | AUC | Test Accuracy |
+|-------|-----|---------------|
+| CNN baseline (Lepin 2024) | 0.9512 | - |
+| GraphConv GNN | 0.9740 | 0.9242 |
+| TransformerConv GNN | 0.9832 | 0.9473 |
 
 ## Planned
 
