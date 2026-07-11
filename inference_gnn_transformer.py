@@ -11,9 +11,9 @@ from sklearn import metrics
 import os
 
 # Paths
-graphs_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs/"
-weights_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/weights/"
-output_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/output/"
+graphs_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs_edge/"
+weights_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/weights_transformer/"
+output_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/output_transformer/"
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -21,22 +21,29 @@ os.makedirs(output_dir, exist_ok=True)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
 
-# Model (must match train_gnn.py)
-class GNNClassifier(nn.Module):
-    def __init__(self, input_dim, hidden_dims, output_dim):
-        super(GNNClassifier, self).__init__()
+# Model (must match train_gnn_transformer.py)
+class GNNTransformer(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim, edge_dim, heads=4):
+        super(GNNTransformer, self).__init__()
         self.init_batch_norm = BatchNorm(input_dim)
         conv_layers = []
         for hidden_dim in hidden_dims:
-            conv_layers.append((conv.GraphConv(input_dim, hidden_dim), BatchNorm(hidden_dim), nn.ReLU()))
-            input_dim = hidden_dim
+            transformer_conv = conv.TransformerConv(input_dim, hidden_dim, heads=heads, edge_dim=edge_dim, concat=True)
+            batch_norm = BatchNorm(hidden_dim * heads)
+            activation = nn.ReLU()
+            conv_layers.append((transformer_conv, batch_norm, activation))
+            input_dim = hidden_dim * heads
+            edge_dim  = None
         self.conv_layers = nn.ModuleList([nn.ModuleList(layer) for layer in conv_layers])
         self.output_layer = nn.Linear(input_dim * 2, output_dim)
 
-    def forward(self, data, edges, batch_indices, skip_output_activation=False):
+    def forward(self, data, edges, batch_indices, edge_attr=None, skip_output_activation=False):
         x = self.init_batch_norm(data)
-        for gnn_conv, batch_norm, activation in self.conv_layers:
-            x = gnn_conv(x, edges)
+        for i, (transformer_conv, batch_norm, activation) in enumerate(self.conv_layers):
+            if i == 0:
+                x = transformer_conv(x, edges, edge_attr=edge_attr)
+            else:
+                x = transformer_conv(x, edges)
             x = batch_norm(x)
             x = activation(x)
         x = torch.cat([global_mean_pool(x, batch_indices), global_max_pool(x, batch_indices)], dim=1)
@@ -47,9 +54,11 @@ class GNNClassifier(nn.Module):
 
 # Load model and weights
 input_dim   = 3
+edge_dim    = 3
 hidden_dims = [32, 64, 128, 256]
-model = GNNClassifier(input_dim=input_dim, hidden_dims=hidden_dims, output_dim=1).to(device)
-model.load_state_dict(torch.load(weights_dir + 'gnn_model_best.pt', map_location=device, weights_only=False))
+heads       = 4
+model = GNNTransformer(input_dim=input_dim, hidden_dims=hidden_dims, output_dim=1, edge_dim=edge_dim, heads=heads).to(device)
+model.load_state_dict(torch.load(weights_dir + 'transformer_model_best.pt', map_location=device, weights_only=False))
 model.eval()
 print("Model loaded.")
 
@@ -70,7 +79,7 @@ test_flags  = []
 for batch in test_loader:
     batch = batch.to(device)
     with torch.no_grad():
-        outputs = model(batch.x, batch.edge_index, batch.batch, skip_output_activation=True)
+        outputs = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr, skip_output_activation=True)
         scores  = torch.sigmoid(outputs).squeeze()
         test_scores.extend(scores.cpu().numpy())
         test_flags.extend(batch.y.cpu().numpy())
@@ -88,11 +97,11 @@ auc_score   = metrics.auc(fpr, tpr)
 print(f"AUC: {auc_score:.4f}")
 
 plt.figure(figsize=(8, 6))
-plt.plot(fpr, tpr, label=f'GNN (AUC = {auc_score:.4f})')
+plt.plot(fpr, tpr, label=f'TransformerConv GNN (AUC = {auc_score:.4f})')
 plt.plot([0, 1], [0, 1], 'k--', label='Random')
 plt.xlabel('False Positive Rate')
 plt.ylabel('True Positive Rate')
-plt.title('ROC Curve - Dark Trident GNN')
+plt.title('ROC Curve - Dark Trident TransformerConv GNN')
 plt.legend()
 plt.savefig(output_dir + 'roc_curve.png')
 plt.close()
@@ -104,7 +113,7 @@ for cls, label in [(0, 'Background'), (1, 'Signal')]:
     plt.hist(test_scores[mask], bins=bins, alpha=0.5, density=True, label=label)
 plt.xlabel('Signal Score')
 plt.ylabel('Normalised Counts')
-plt.title('Score Distribution')
+plt.title('Score Distribution - TransformerConv GNN')
 plt.legend()
 plt.savefig(output_dir + 'score_distribution.png')
 plt.close()
@@ -124,7 +133,7 @@ for i in range(2):
 plt.xlabel('Predicted')
 plt.ylabel('True')
 plt.colorbar()
-plt.title('Normalised Confusion Matrix')
+plt.title('Normalised Confusion Matrix - TransformerConv GNN')
 plt.savefig(output_dir + 'confusion_matrix.png')
 plt.close()
 

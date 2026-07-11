@@ -76,7 +76,7 @@ class GNNClassifier(nn.Module):
 
 # Hyperparameters
 input_dim     = 3
-hidden_dims   = [32, 64, 128, 256] # best one figured out from hyperparameter tuning
+hidden_dims   = [32, 64, 128, 256]
 batch_size    = 32
 n_epochs      = 100
 learning_rate = 1e-3
@@ -149,12 +149,16 @@ for epoch in range(n_epochs):
     epoch_time = time.time() - epoch_start
     print(f"Epoch {epoch+1}/{n_epochs} - Train Loss: {epoch_loss:.4f}, Train Acc: {epoch_acc:.4f}, Val Loss: {epoch_val_loss:.4f}, Val Acc: {epoch_val_acc:.4f}, Time: {epoch_time:.1f}s")
 
-    # Early stopping
-    if epoch_val_loss < best_val_loss:
-        best_val_loss    = epoch_val_loss
+    # Early stopping with smoothing (average of last 5 epochs)
+    if len(val_losses) >= 5:
+        smoothed_val_loss = np.mean(val_losses[-5:])
+    else:
+        smoothed_val_loss = epoch_val_loss
+
+    if smoothed_val_loss < best_val_loss:
+        best_val_loss     = smoothed_val_loss
         epochs_no_improve = 0
-        best_model_state = model.state_dict()
-        torch.save(best_model_state, weights_dir + 'gnn_model_best.pt')
+        torch.save(model.state_dict(), weights_dir + 'gnn_model_best.pt')
     else:
         epochs_no_improve += 1
         if epochs_no_improve >= patience:

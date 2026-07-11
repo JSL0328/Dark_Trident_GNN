@@ -1,0 +1,8 @@
+executable = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/inference_gnn_transformer.sh
+output = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/inference_gnn_transformer.$(CLUSTER).out
+error  = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/inference_gnn_transformer.$(CLUSTER).err
+log    = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/inference_gnn_transformer.$(CLUSTER).log
+request_gpus = 1
++MaxRuntime = 86400
+notification = Always
+queue
