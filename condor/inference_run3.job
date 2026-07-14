@@ -1,0 +1,9 @@
+executable = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/inference_run3.sh
+output = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/inference_run3.$(CLUSTER).out
+error  = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/inference_run3.$(CLUSTER).err
+log    = /vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/condor/logs/inference_run3.$(CLUSTER).log
+request_gpus = 1
+request_memory = 16000MB
++MaxRuntime = 172800
+notification = Always
+queue
