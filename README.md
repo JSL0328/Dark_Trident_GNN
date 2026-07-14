@@ -2,7 +2,9 @@
 
 Graph Neural Network classifier for dark trident BSM signal detection in MicroBooNE LArTPC data.
 
-![Event Display](figures/event_display.png)
+<p align="center">
+  <img src="figures/event_display.png" width="50%"/>
+</p>
 
 *MicroBooNE NuMI beam-on data event with GNN signal score 1.000. The colour scale represents charge deposition (ADC), with red indicating high charge. The shower-like topology is characteristic of a dark trident candidate.*
 
