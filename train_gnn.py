@@ -79,19 +79,20 @@ input_dim     = 3
 hidden_dims   = [32, 64, 128, 256]
 batch_size    = 32
 n_epochs      = 100
-learning_rate = 1e-3
-patience      = 10
+learning_rate = 5e-4
+patience      = 5
 
 model     = GNNClassifier(input_dim=input_dim, hidden_dims=hidden_dims, output_dim=1).to(device)
 optimizer = torch.optim.RAdam(model.parameters(), lr=learning_rate)
 criterion = nn.BCEWithLogitsLoss()
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.3, patience=5)
 
 # Print model structure
-print(torchinfo.summary(model, input_data=(
+torchinfo.summary(model, input_data=(
     torch.randn((10, input_dim)).to(device),
     torch.tensor([[0,1,2,3,4,5,6,7,8,9],[1,0,3,2,5,4,7,6,9,8]], dtype=torch.long).to(device),
     torch.zeros(10, dtype=torch.long).to(device)
-)))
+))
 
 # Training loop with early stopping
 train_losses, val_losses         = [], []
@@ -100,7 +101,14 @@ best_val_loss                    = float('inf')
 epochs_no_improve                = 0
 best_model_state                 = None
 stopped_epoch                    = n_epochs
-training_start                   = time.time()
+training_start = time.time()
+
+if device == 'cuda':
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event   = torch.cuda.Event(enable_timing=True)
+    start_event.record()
+else:
+    training_start = time.time()
 
 for epoch in range(n_epochs):
     epoch_start = time.time()
@@ -147,7 +155,10 @@ for epoch in range(n_epochs):
     val_accuracies.append(epoch_val_acc)
 
     epoch_time = time.time() - epoch_start
-    print(f"Epoch {epoch+1}/{n_epochs} - Train Loss: {epoch_loss:.4f}, Train Acc: {epoch_acc:.4f}, Val Loss: {epoch_val_loss:.4f}, Val Acc: {epoch_val_acc:.4f}, Time: {epoch_time:.1f}s")
+    current_lr = optimizer.param_groups[0]['lr']
+    print(f"Epoch {epoch+1}/{n_epochs} - Train Loss: {epoch_loss:.4f}, Train Acc: {epoch_acc:.4f}, Val Loss: {epoch_val_loss:.4f}, Val Acc: {epoch_val_acc:.4f}, LR: {current_lr:.2e}, Time: {epoch_time:.1f}s")
+
+    scheduler.step(epoch_val_loss)
 
     # Early stopping with smoothing (average of last 5 epochs)
     if len(val_losses) >= 5:
@@ -166,8 +177,14 @@ for epoch in range(n_epochs):
             stopped_epoch = epoch + 1
             break
 
-total_time = time.time() - training_start
-print(f"Total training time: {total_time/60:.1f} minutes")
+if device == 'cuda':
+    end_event.record()
+    torch.cuda.synchronize()
+    gpu_time = start_event.elapsed_time(end_event) / 1000
+    print(f"GPU training time: {gpu_time/60:.1f} minutes")
+else:
+    total_time = time.time() - training_start
+    print(f"CPU training time: {total_time/60:.1f} minutes")
 torch.save(model.state_dict(), weights_dir + 'gnn_model_last.pt')
 print(f"Weights saved to {weights_dir}")
 
