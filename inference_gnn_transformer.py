@@ -11,9 +11,9 @@ from sklearn import metrics
 import os
 
 # Paths
-graphs_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs_edge/"
-weights_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/weights_transformer/"
-output_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/output_transformer/"
+graphs_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs_edge_signed/"
+weights_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/weights_transformer_signed/"
+output_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/output_transformer_signed/"
 
 os.makedirs(output_dir, exist_ok=True)
 
@@ -76,9 +76,16 @@ test_scores, test_flags = [], []
 for batch in test_loader:
     batch = batch.to(device)
     with torch.no_grad():
+        dummy_mask = torch.tensor([
+            g.x.shape[0] == 1 and g.x.sum().item() == 0
+            for g in batch.to_data_list()
+        ]).to(device)
+
         outputs = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr, skip_output_activation=True)
         scores  = torch.sigmoid(outputs).squeeze(-1)
-        test_scores.extend(scores.cpu().numpy() if scores.dim() > 0 else [scores.cpu().item()])
+        scores[dummy_mask] = 0.0
+
+        test_scores.extend(scores.cpu().numpy())
         test_flags.extend(batch.y.cpu().numpy())
 
 test_scores = np.array(test_scores)
@@ -90,7 +97,7 @@ np.save(output_dir + 'truth.npy', test_flags)
 print("Saved test_scores.npy and truth.npy")
 
 # Accuracy and AUC
-test_acc  = ((test_scores > 0.5) == test_flags).mean()
+test_acc    = ((test_scores > 0.5) == test_flags).mean()
 fpr, tpr, _ = metrics.roc_curve(test_flags, test_scores)
 auc_score   = metrics.auc(fpr, tpr)
 print(f"Test Accuracy: {test_acc:.4f}")

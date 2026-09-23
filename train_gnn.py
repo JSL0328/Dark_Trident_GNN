@@ -79,7 +79,7 @@ input_dim     = 3
 hidden_dims   = [32, 64, 128, 256]
 batch_size    = 32
 n_epochs      = 100
-learning_rate = 5e-4
+learning_rate = 1e-3
 patience      = 5
 
 model     = GNNClassifier(input_dim=input_dim, hidden_dims=hidden_dims, output_dim=1).to(device)

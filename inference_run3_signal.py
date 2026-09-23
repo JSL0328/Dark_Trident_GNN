@@ -117,8 +117,8 @@ for h5_file in h5_files:
         batch = batch.to(device)
         with torch.no_grad():
             outputs = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr, skip_output_activation=True)
-            s       = torch.sigmoid(outputs).squeeze()
-            scores.extend(s.cpu().numpy())
+            s = torch.sigmoid(outputs).squeeze(-1)
+            scores.extend(s.cpu().numpy() if s.dim() > 0 else [s.cpu().item()])
 
     scores     = np.array(scores)
     efficiency = (scores > THRESHOLD).mean()

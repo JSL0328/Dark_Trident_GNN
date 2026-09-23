@@ -6,3 +6,10 @@ weights_transformer/
 output/
 output_transformer/
 condor/logs/
+graphs_edge_signed/
+output_transformer_noedge/
+output_transformer_signed/
+weights_transformer_noedge/
+weights_transformer_signed/
+*.pt
+*.npy

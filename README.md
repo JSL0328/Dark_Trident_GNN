@@ -26,7 +26,7 @@ Each event is represented as a graph where nodes are hit pixels extracted from t
 
 ### Graph Transformer Network (`train_gnn_transformer.py`)
 - 4-layer TransformerConv with multi-head attention (heads=4)
-- Edge features: wire distance, time distance, ADC difference
+- Edge features: signed wire distance, drift-time distance, ADC difference
 - Global mean + max pooling
 - Hidden dims: [16, 32, 64, 128]
 - Optimiser: RAdam, lr=1e-4 (selected via LR range test, Smith 2017/2018)
@@ -39,50 +39,70 @@ Each event is represented as a graph where nodes are hit pixels extracted from t
 | Dataset | Type | Purpose |
 |---------|------|---------|
 | MPID training set (62,058 events after empty exclusion) | Simulation | Model training |
-| MPID test set (6,807 events after empty exclusion) | Simulation | Performance evaluation (AUC, ROC) |
+| MPID test set (6,911 events after empty exclusion) | Simulation | Performance evaluation (AUC, ROC) |
 | Run 1 & Run 3 signal simulation | Simulation | Signal efficiency measurement |
-| Run 3 NuMI beam-on data | Real data | Data/MC comparison |
+| Run 3 NuMI beam-on data (5.0 × 10²⁰ POT) | Real data | Data/MC comparison |
 
 ## Pipeline
 
 1. `convert_to_hdf5.py` — Convert LArCV ROOT files to HDF5 spacepoint format
-2. `make_graphs.py` — Build KNN graphs (node features only)
-3. `make_graphs_edge.py` — Build KNN graphs with edge features (wire/time distance, ADC difference)
-4. `lr_finder.py` — Learning rate range test (Smith 2017/2018) for graph-based models
-5. `train_gnn.py` — Train Graph Convolutional Network
-6. `train_gnn_transformer.py` — Train Graph Transformer Network
-7. `inference_gnn.py` — Evaluate Graph Convolutional Network: ROC curve, AUC, score distribution
-8. `inference_gnn_transformer.py` — Evaluate Graph Transformer Network: ROC curve, AUC, score distribution, saves test_scores.npy and truth.npy
-9. `occlusion_analysis.py` — Node removal study to identify spatially important regions
-10. `inference_run3.py` — Apply model to Run 3 NuMI beam-on data
-11. `inference_run1_signal.py` / `inference_run3_signal.py` — Signal efficiency measurement
+2. `make_graphs.py` / `make_graphs_edge.py` / `make_graphs_edge_signed.py` — Build KNN graphs (node-only / with edge features / with signed edge features)
+3. `lr_finder.py` — Learning rate range test (Smith 2017/2018)
+4. `train_gnn.py` / `train_gnn_transformer.py` — Train GCN / Graph Transformer
+5. `inference_gnn.py` / `inference_gnn_transformer.py` — Evaluate on test set: ROC, AUC, score distributions
+6. `bootstrapping.py` — Bootstrapped AUC uncertainty (N=1,000 resamples)
+7. `delong_test.py` — DeLong test for pairwise AUC significance
+8. `occlusion_analysis.py` — Node removal study for spatial interpretability
+9. `tsne_analysis.py` — Layer-wise t-SNE node embedding visualisation
+10. `inference_run3_signal.py` / `plot_run3_histogram.py` — Apply best model to Run 3 NuMI beam-on data
 
 ## Results
 
-| Model | AUC | Test Accuracy |
-|-------|-----|---------------|
-| CNN baseline (Lepin 2024) | 0.9512 | 0.954 |
-| Graph Convolutional Network | 0.9740 | tbc |
-| Graph Transformer Network | 0.9832 | tbc |
+Final classification performance on the held-out test set (N = 6,911), with bootstrapped uncertainties (N = 1,000 resamples):
 
-*Results to be updated after retraining with optimal learning rates from LR range test.*
+| Model | AUC | 95% CI (AUC) | Test Accuracy | Training Time | Parameters |
+|-------|-----|--------------|----------------|----------------|------------|
+| CNN (Lepin 2024, baseline) | 0.9880 ± 0.0016 | [0.9848, 0.9909] | 95.43 ± 0.22% | ~215 min | 20,631,938 |
+| GCN | 0.9655 ± 0.0023 | [0.9609, 0.9701] | 91.72 ± 0.34% | ~22 min | 88,167 |
+| Graph Transformer | 0.9807 ± 0.0017 | [0.9771, 0.9841] | 94.46 ± 0.26% | ~79 min | 695,879 |
+
+**DeLong test (pairwise AUC significance):**
+
+| Comparison | z-statistic | p-value |
+|------------|-------------|---------|
+| CNN vs Graph Transformer | 2.734 | 0.0063 |
+| CNN vs GCN | 13.265 | < 0.0001 |
+| Graph Transformer vs GCN | 8.986 | < 0.0001 |
+
+All pairwise differences are statistically significant (α = 0.05), though the absolute AUC gap between CNN and Graph Transformer is small (0.0046). The GCN trades ~2% AUC for a ~10x reduction in training time and ~230x fewer parameters than the CNN — a strong candidate for high-throughput or real-time filtering applications.
 
 ## Interpretability
 
-Occlusion analysis (node removal) reveals the vertex region as the critical spatial determinant for classification — consistent with the e+e- pair topology of the dark trident signal. Further interpretability analysis (t-SNE node embedding, edge feature ablation study) is ongoing.
+- **Occlusion analysis** (Graph Transformer): the vertex region is the dominant spatial determinant for classification, consistent with the e+e- pair topology of the dark trident signal.
+- **t-SNE node embeddings** (layer-wise): signal and background separate progressively by layer; Layer 4 shows sub-clustering within the signal region, likely reflecting kinematic variation (shower energy, opening angle) across simulated dark-trident parameters.
+
+## Application to Run 3 Beam-on Data
+
+CNN classifier score distribution applied to MicroBooNE NuMI Run 3 data (5.0 × 10²⁰ POT), score > 0.5 region, after topological preselection:
+
+- **χ²/dof = 0.51** (10 dof) — observed data consistent with Standard Model background prediction
+- Local excess in the 0.85–0.90 score bin (N_obs = 23 vs. N_exp = 15.81 ± 4.90) is a +1.05σ fluctuation, not a signal excess
+- No evidence for a dark-trident signal at benchmark parameters (M_A' = 50 MeV, M_χ/M_A' = 0.6, α_D = 0.1)
+
+## Neuromorphic Computing (Preliminary)
+
+Photonic neuromorphic classifier (Ng et al.) benchmarked against the CNN in the low-data regime: exceeds 80% accuracy on Signal vs. Background classification with only ~100 training images, where the CNN needs several hundred. Full results and data-prep code: [Dark_Trident_Neuromorphic](https://github.com/JSL0328/Dark_Trident_Neuromorphic).
 
 ## Planned
 
-- t-SNE node embedding visualisation by layer
-- Edge feature ablation study: Graph Transformer Network with and without edge features
-- Graph structure analysis: signal vs background graph properties
-- Training size scan: Graph Neural Network vs CNN vs neuromorphic computing data efficiency comparison
-- Bootstrapped AUC uncertainty estimation
+- [ ] Edge feature ablation study (Graph Transformer with/without edge features) — scripts present (`train_gnn_transformer_noedge.py`), results pending
+- [ ] Full neuromorphic training-size scan on the full 62,058-image dataset
+- [ ] Systematic investigation of Graph Transformer signal sub-clusters (t-SNE Layer 4) by simulation parameters (M_A', ε)
 
 ## Libraries Required
 
 ```bash
-pip install torch torch_geometric h5py scikit-learn networkx torchinfo
+pip install torch torch_geometric h5py scikit-learn networkx torchinfo optuna
 ```
 
 ## References
@@ -91,6 +111,7 @@ pip install torch torch_geometric h5py scikit-learn networkx torchinfo
 - Smith (2017/2018): Cyclical Learning Rates / Disciplined approach to neural network hyper-parameters
 - Shlomi et al. (2021): Graph Neural Networks in Particle Physics
 - Lepin (2024): A Search for Dark Tridents Using the MicroBooNE Detector (MRes thesis, Imperial College London)
+- Ng et al.: Neuromorphic photonic classification system
 
 ## Alternative
 

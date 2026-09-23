@@ -140,45 +140,49 @@ def run_lr_finder(model, train_sample, model_name, edge_attr=True,
 
 import random
 import numpy as np
-random.seed(2)
-np.random.seed(2)
-torch.manual_seed(2)
-torch.cuda.manual_seed(2)
 
-# Run for both models
-transformer = GNNTransformer(input_dim=3, hidden_dims=[16,32,64,128], output_dim=1, edge_dim=3, heads=4)
-gnn         = GNNClassifier(input_dim=3, hidden_dims=[32,64,128,256], output_dim=1)
-
-results = {}
-for model, name, use_edge, bs in [(gnn, 'Graph Convolutional Network', False, 32), (transformer, 'Graph Transformer Network', True, 16)]:
-    lrs, losses, s_lrs, s_losses = run_lr_finder(model, train_sample, name, edge_attr=use_edge, batch_size=bs, num_iter=300)
-    results[name] = {'lrs': lrs, 'losses': losses, 's_lrs': s_lrs, 's_losses': s_losses}
-
-# Plot
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-optimal_regions = {
-    'Graph Convolutional Network': (2e-4, 1.25e-3),
-    'Graph Transformer Network':   (4e-5, 2.5e-4)
-}
 optimal_lr = {
-    'Graph Convolutional Network': 5e-4,
-    'Graph Transformer Network':   1e-4,
+    'Graph Convolutional Network': 1e-3,
+    'Graph Transformer Network':   5e-4,
 }
 
-for ax, (name, res) in zip(axes, results.items()):
-    ax.plot(res['lrs'], res['losses'], alpha=0.3, color='blue', label='Raw loss')
-    ax.plot(res['s_lrs'], res['s_losses'], color='red', linewidth=2, label='Smoothed loss')
-    x_min, x_max = optimal_regions[name]
-    ax.axvspan(x_min, x_max, alpha=0.2, color='green', label='Optimal learning rate region')
-    ax.axvline(x=optimal_lr[name], color='green', linestyle='--', label=f'Optimal learning rate: {optimal_lr[name]:.2e}')
-    ax.set_xscale('log')
-    ax.set_xlabel('Learning Rate')
-    ax.set_ylabel('Loss')
-    ax.set_title(f'Learning Rate Range Test: {name}')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+seeds = [1, 2, 3, 4, 5, 7, 10, 13, 42]
 
-plt.tight_layout()
-plt.savefig(output_dir + 'lr_finder_opt.png', dpi=150)
-plt.close()
-print(f"\nSaved lr_finder_opt.png to {output_dir}")
+for seed in seeds:
+    print(f"\n{'='*50}")
+    print(f"Seed: {seed}")
+    print(f"{'='*50}")
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+
+    transformer = GNNTransformer(input_dim=3, hidden_dims=[16,32,64,128], output_dim=1, edge_dim=3, heads=4)
+    gnn         = GNNClassifier(input_dim=3, hidden_dims=[32,64,128,256], output_dim=1)
+
+    results = {}
+    for model, name, use_edge, bs in [(gnn, 'Graph Convolutional Network', False, 32), (transformer, 'Graph Transformer Network', True, 16)]:
+        lrs, losses, s_lrs, s_losses = run_lr_finder(model, train_sample, name, edge_attr=use_edge, batch_size=bs, num_iter=300)
+        results[name] = {'lrs': lrs, 'losses': losses, 's_lrs': s_lrs, 's_losses': s_losses}
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle(f'Seed: {seed}', fontsize=14)
+
+    for ax, (name, res) in zip(axes, results.items()):
+        ax.plot(res['lrs'], res['losses'], alpha=0.3, color='blue', label='Raw loss')
+        ax.plot(res['s_lrs'], res['s_losses'], color='red', linewidth=2, label='Smoothed loss')
+        ax.axvline(x=optimal_lr[name], color='green', linestyle='--', label=f'Optimal learning rate: {optimal_lr[name]:.2e}')
+        ax.set_xscale('log')
+        ax.set_xlabel('Learning Rate')
+        ax.set_ylabel('Loss')
+        ax.set_title(f'Learning Rate Range Test: {name}')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_dir + f'lr_finder_seed{seed}.png', dpi=150)
+    plt.close()
+    print(f"Saved lr_finder_seed{seed}.png")
+
+print("\nDone. Check all plots to find the best seed.")

@@ -14,8 +14,8 @@ from torch_geometric.loader import DataLoader
 import os
 
 # Paths
-graphs_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs_edge/"
-weights_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/weights_transformer/"
+graphs_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/graphs_edge_signed/"
+weights_dir = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/weights_transformer_signed/"
 output_dir  = "/vols/sbn/uboone/ll4420/dark_tridents_wspace/DM-GNN/output_transformer/"
 
 os.makedirs(weights_dir, exist_ok=True)
@@ -25,6 +25,12 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
 if device == 'cuda':
     print(torch.cuda.get_device_name(0))
+    
+# Seed 고정
+random.seed(1)
+np.random.seed(1)
+torch.manual_seed(1)
+torch.cuda.manual_seed(1)
 
 print("Loading all training graphs...")
 all_graphs = []
@@ -84,7 +90,7 @@ hidden_dims   = [16, 32, 64, 128]
 heads         = 4
 batch_size    = 16
 n_epochs      = 100
-learning_rate = 1e-4
+learning_rate = 5e-4
 patience      = 5
 
 model     = GNNTransformer(input_dim=input_dim, hidden_dims=hidden_dims, output_dim=1, edge_dim=edge_dim, heads=heads).to(device)

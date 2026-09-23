@@ -104,6 +104,11 @@ print(f"Found {len(h5_files)} signal files")
 
 for h5_file in h5_files:
     filename = os.path.basename(h5_file).replace('.h5', '')
+
+    if os.path.exists(output_dir + filename + '_scores.npy'):
+        print(f"Skipping {filename} (already exists)")
+        continue
+
     print(f"\nProcessing {filename}...")
 
     graphs = load_and_make_graphs(h5_file)
@@ -118,8 +123,8 @@ for h5_file in h5_files:
         batch = batch.to(device)
         with torch.no_grad():
             outputs = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr, skip_output_activation=True)
-            s       = torch.sigmoid(outputs).squeeze()
-            scores.extend(s.cpu().numpy())
+            s = torch.sigmoid(outputs).squeeze(-1)
+            scores.extend(s.cpu().numpy() if s.dim() > 0 else [s.cpu().item()])
 
     scores     = np.array(scores)
     efficiency = (scores > THRESHOLD).mean()
