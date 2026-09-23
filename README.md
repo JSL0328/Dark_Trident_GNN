@@ -16,7 +16,14 @@ Each event is represented as a graph where nodes are hit pixels extracted from t
 
 ## Models
 
+### Convolutional Neural Network (baseline, Lepin 2024)
+
+<p align="center"><img src="figures/cnn_architecture.png" width="70%"/></p>
+
 ### Graph Convolutional Network (`train_gnn.py`)
+
+<p align="center"><img src="figures/gcn_architecture.png" width="70%"/></p>
+
 - 4-layer GraphConv with BatchNorm and ReLU
 - Global mean + max pooling
 - Hidden dims: [32, 64, 128, 256]
@@ -25,6 +32,9 @@ Each event is represented as a graph where nodes are hit pixels extracted from t
 - LR scheduler: ReduceLROnPlateau (factor=0.2, patience=5)
 
 ### Graph Transformer Network (`train_gnn_transformer.py`)
+
+<p align="center"><img src="figures/graph_transformer_architecture.png" width="70%"/></p>
+
 - 4-layer TransformerConv with multi-head attention (heads=4)
 - Edge features: signed wire distance, drift-time distance, ADC difference
 - Global mean + max pooling
@@ -66,6 +76,8 @@ Final classification performance on the held-out test set (N = 6,911), with boot
 | GCN | 0.9655 ± 0.0023 | [0.9609, 0.9701] | 91.72 ± 0.34% | ~22 min | 88,167 |
 | Graph Transformer | 0.9807 ± 0.0017 | [0.9771, 0.9841] | 94.46 ± 0.26% | ~79 min | 695,879 |
 
+<p align="center"><img src="figures/roc_comparison.png" width="70%"/></p>
+
 **DeLong test (pairwise AUC significance):**
 
 | Comparison | z-statistic | p-value |
@@ -79,11 +91,16 @@ All pairwise differences are statistically significant (α = 0.05), though the a
 ## Interpretability
 
 - **Occlusion analysis** (Graph Transformer): the vertex region is the dominant spatial determinant for classification, consistent with the e+e- pair topology of the dark trident signal.
+
+<p align="center"><img src="figures/occlusion_2x2.png" width="70%"/></p>
+
 - **t-SNE node embeddings** (layer-wise): signal and background separate progressively by layer; Layer 4 shows sub-clustering within the signal region, likely reflecting kinematic variation (shower energy, opening angle) across simulated dark-trident parameters.
 
 ## Application to Run 3 Beam-on Data
 
 CNN classifier score distribution applied to MicroBooNE NuMI Run 3 data (5.0 × 10²⁰ POT), score > 0.5 region, after topological preselection:
+
+<p align="center"><img src="figures/run3_signal_score_histogram.png" width="70%"/></p>
 
 - **χ²/dof = 0.51** (10 dof) — observed data consistent with Standard Model background prediction
 - Local excess in the 0.85–0.90 score bin (N_obs = 23 vs. N_exp = 15.81 ± 4.90) is a +1.05σ fluctuation, not a signal excess
