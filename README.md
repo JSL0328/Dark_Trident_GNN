@@ -18,11 +18,11 @@ Each event is represented as a graph where nodes are hit pixels extracted from t
 
 ### Convolutional Neural Network (baseline, Lepin 2024)
 
-<p align="center"><img src="figures/cnn_architecture.png" width="70%"/></p>
+<p align="center"><img src="figures/cnn_architecture.png" width="45%"/></p>
 
 ### Graph Convolutional Network (`train_gnn.py`)
 
-<p align="center"><img src="figures/gcn_architecture.png" width="70%"/></p>
+<p align="center"><img src="figures/gcn_architecture.png" width="90%"/></p>
 
 - 4-layer GraphConv with BatchNorm and ReLU
 - Global mean + max pooling
@@ -33,7 +33,7 @@ Each event is represented as a graph where nodes are hit pixels extracted from t
 
 ### Graph Transformer Network (`train_gnn_transformer.py`)
 
-<p align="center"><img src="figures/graph_transformer_architecture.png" width="70%"/></p>
+<p align="center"><img src="figures/graph_transformer_architecture.png" width="90%"/></p>
 
 - 4-layer TransformerConv with multi-head attention (heads=4)
 - Edge features: signed wire distance, drift-time distance, ADC difference
